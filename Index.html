@@ -1,0 +1,320 @@
+html_code = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Offline Inventory Manager</title>
+<!-- Bootstrap CSS (will be cached for offline use) -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+<style>
+  body { padding: 1rem; }
+  #app { display: none; }
+  #scannerViewport { position: relative; width: 100%; height: 60vh; background: #000; }
+  #overlayCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+</style>
+</head>
+<body>
+  <!-- LOGIN -->
+  <div id="login" class="container">
+    <h1 class="mb-3">Inventory Manager</h1>
+    <p class="text-muted">Enter a unique user ID. This can be anything memorable to you—no password required.</p>
+    <div class="input-group mb-3">
+      <span class="input-group-text">User&nbsp;ID</span>
+      <input type="text" id="userIdInput" class="form-control" />
+    </div>
+    <button id="loginBtn" class="btn btn-primary">Login</button>
+  </div>
+
+  <!-- MAIN APP -->
+  <div id="app" class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mt-2">
+      <h2>Warehouses</h2>
+      <div>
+        <button class="btn btn-success" id="addWarehouseBtn">+ Warehouse</button>
+        <button class="btn btn-outline-primary" id="uploadBtn">Upload to GitHub</button>
+        <button class="btn btn-outline-secondary" id="logoutBtn">Logout</button>
+      </div>
+    </div>
+    <ul class="list-group my-3" id="warehouseList"></ul>
+
+    <div id="warehouseSection" class="mt-4" style="display:none;">
+      <div class="d-flex justify-content-between align-items-center">
+        <h3 id="warehouseTitle">Warehouse</h3>
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-success" id="addPartBtn">+ Part</button>
+          <button class="btn btn-outline-secondary" id="importBtn">Import CSV/XLSX</button>
+          <button class="btn btn-outline-info" id="scanBtn">Scan Barcode</button>
+          <input type="file" id="fileInput" accept=".csv,.xlsx" style="display:none;">
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-striped mt-3 align-middle" id="partTable">
+          <thead class="table-light">
+            <tr>
+              <th>Our&nbsp;Part&nbsp;#</th>
+              <th>Customer&nbsp;Part&nbsp;#</th>
+              <th>UPC</th>
+              <th>Custom&nbsp;Barcode</th>
+              <th>Min&nbsp;Qty</th>
+              <th>Max&nbsp;Qty</th>
+              <th>Inventory</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- WAREHOUSE MODAL -->
+  <div class="modal fade" id="warehouseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Add Warehouse</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Warehouse Name</label>
+            <input type="text" id="warehouseNameInput" class="form-control" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="saveWarehouseBtn">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PART MODAL -->
+  <div class="modal fade" id="partModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Add / Edit Part</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Our Part #</label>
+            <input type="text" id="ourPartInput" class="form-control" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Customer Part #</label>
+            <input type="text" id="custPartInput" class="form-control" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">UPC</label>
+            <input type="text" id="upcInput" class="form-control" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Custom Barcode</label>
+            <input type="text" id="barcodeInput" class="form-control" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Min Qty</label>
+            <input type="number" id="minQtyInput" class="form-control" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Max Qty</label>
+            <input type="number" id="maxQtyInput" class="form-control" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Inventory</label>
+            <input type="number" id="qtyInput" class="form-control" />
+          </div>
+          <input type="hidden" id="partIdHidden" />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="savePartBtn">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BARCODE SCANNER MODAL -->
+  <div class="modal fade" id="scannerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+      <div class="modal-content bg-dark text-white">
+        <div class="modal-header border-0">
+          <h5 class="modal-title">Scan Barcode</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-0">
+          <div id="scannerViewport"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- LIBRARIES -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/idb@7/build/umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
+<script>
+/******************* CONFIGURATION *******************/
+const GITHUB_TOKEN = ""; // <-- Insert your GitHub personal access token (repo scope)
+const GITHUB_OWNER = "your-github-username"; // GitHub user or org
+const GITHUB_REPO  = "inventory-data";        // Repo that will store JSON data
+const GITHUB_BRANCH = "main";                 // Branch name
+const GITHUB_PATH   = "data";                 // Folder path in repo
+/*****************************************************/
+
+// Globals
+let currentUserId = null;
+let currentWarehouseId = null;
+const dbPromise = idb.openDB("inventoryDB", 1, {
+  upgrade(db) {
+    db.createObjectStore("warehouses", { keyPath: "id" });
+    db.createObjectStore("parts", { keyPath: "id" });
+  }
+});
+
+// Utility
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substr(2, 9));
+
+/**************** LOGIN ****************/
+const loginBtn = document.getElementById("loginBtn");
+loginBtn.addEventListener("click", async () => {
+  const id = document.getElementById("userIdInput").value.trim();
+  if (!id) return alert("Please enter a user ID");
+  currentUserId = id;
+  localStorage.setItem("inv_user", id);
+  await renderWarehouses();
+  document.getElementById("login").style.display = "none";
+  document.getElementById("app").style.display = "block";
+});
+
+function autoLogin() {
+  const stored = localStorage.getItem("inv_user");
+  if (stored) {
+    currentUserId = stored;
+    document.getElementById("login").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    renderWarehouses();
+  }
+}
+autoLogin();
+
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  localStorage.removeItem("inv_user");
+  currentUserId = null;
+  location.reload();
+});
+
+/**************** WAREHOUSES ****************/
+const warehouseModal = new bootstrap.Modal(document.getElementById("warehouseModal"));
+
+document.getElementById("addWarehouseBtn").addEventListener("click", () => {
+  document.getElementById("warehouseNameInput").value = "";
+  warehouseModal.show();
+});
+
+document.getElementById("saveWarehouseBtn").addEventListener("click", async () => {
+  const name = document.getElementById("warehouseNameInput").value.trim();
+  if (!name) return alert("Warehouse name is required");
+  const warehouse = { id: uuid(), name, ownerId: currentUserId };
+  const db = await dbPromise;
+  await db.put("warehouses", warehouse);
+  warehouseModal.hide();
+  renderWarehouses();
+});
+
+async function renderWarehouses() {
+  const list = document.getElementById("warehouseList");
+  list.innerHTML = "";
+  const db = await dbPromise;
+  const tx = db.transaction("warehouses");
+  const all = await tx.store.getAll();
+  const mine = all.filter(w => w.ownerId === currentUserId);
+  if (!mine.length) {
+    list.innerHTML = '<li class="list-group-item text-muted">No warehouses yet</li>';
+  }
+  mine.forEach(w => {
+    const li = document.createElement("li");
+    li.className = "list-group-item d-flex justify-content-between align-items-center";
+    li.textContent = w.name;
+    li.addEventListener("click", () => openWarehouse(w));
+    list.appendChild(li);
+  });
+}
+
+function openWarehouse(w) {
+  currentWarehouseId = w.id;
+  document.getElementById("warehouseSection").style.display = "block";
+  document.getElementById("warehouseTitle").textContent = w.name;
+  renderParts();
+}
+
+/**************** PARTS ****************/
+const partModal = new bootstrap.Modal(document.getElementById("partModal"));
+
+document.getElementById("addPartBtn").addEventListener("click", () => {
+  clearPartForm();
+  partModal.show();
+});
+
+document.getElementById("savePartBtn").addEventListener("click", async () => {
+  const id = document.getElementById("partIdHidden").value || uuid();
+  const part = {
+    id,
+    warehouseId: currentWarehouseId,
+    ourPart: document.getElementById("ourPartInput").value.trim(),
+    custPart: document.getElementById("custPartInput").value.trim(),
+    upc: document.getElementById("upcInput").value.trim(),
+    customBarcode: document.getElementById("barcodeInput").value.trim(),
+    minQty: +document.getElementById("minQtyInput").value || 0,
+    maxQty: +document.getElementById("maxQtyInput").value || 0,
+    qty: +document.getElementById("qtyInput").value || 0
+  };
+  const db = await dbPromise;
+  await db.put("parts", part);
+  partModal.hide();
+  renderParts();
+});
+
+function clearPartForm() {
+  ["ourPartInput","custPartInput","upcInput","barcodeInput","minQtyInput","maxQtyInput","qtyInput"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("partIdHidden").value="";
+}
+
+async function renderParts() {
+  const tbody = document.querySelector("#partTable tbody");
+  tbody.innerHTML = "";
+  const db = await dbPromise;
+  const all = await db.getAll("parts");
+  const parts = all.filter(p => p.warehouseId === currentWarehouseId);
+  parts.forEach(p => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${p.ourPart}</td><td>${p.custPart}</td><td>${p.upc}</td><td>${p.customBarcode}</td><td>${p.minQty}</td><td>${p.maxQty}</td><td>${p.qty}</td><td><button class='btn btn-sm btn-outline-danger'>✕</button></td>`;
+    tr.querySelector("button").addEventListener("click", async () => {
+      if (confirm("Delete this part?")) {
+        const db = await dbPromise;
+        await db.delete("parts", p.id);
+        renderParts();
+      }
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+/**************** IMPORT ****************/
+document.getElementById("importBtn").addEventListener("click", () => {
+  document.getElementById("fileInput").click();
+});
+
+document.getElementById("fileInput").addEventListener("change", handleFileImport);
+
+function handleFileImport(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  if (file.name.endswith(".csv")) {
+    Papa.parse(file, {
+      header: true,
+      complete: results => saveImportedParts
